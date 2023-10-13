@@ -1,91 +1,90 @@
-import signal
-import sys
+import math
+import os
+import re
 import time
 
 import heroku3
+import lottie
+import requests
+import spamwatch as spam_watch
+from validators.url import url
 
-from .Config import Config
-from .core.logger import logging
-from .core.session import zedub
-from .helpers.functions.converter import Convert
-from .helpers.functions.musictool import *
-from .helpers.utils.utils import runasync
-from .sql_helper.globals import addgvar, delgvar, gvarstatus
+from .. import *
+from ..Config import Config
+from ..core.logger import logging
+from ..core.managers import edit_delete, edit_or_reply
+from ..core.session import sarub
+from ..helpers import *
+from ..helpers.utils import _sartools, _sarutils, _format, install_pip, reply_id
+from ..sql_helper.globals import gvarstatus
 
-__version__ = "3.1.1"
-__license__ = "GNU Affero General Public License v3.0"
-__author__ = "ZThon <https://github.com/Zed-Thon/ZelZal>"
-__copyright__ = f"ZThon Copyright (C) 2021 - 2022  {__author__}"
+# =================== ALSAROT ===================
+bot = sarub
+LOGS = logging.getLogger(__name__)
+USERID = sarub.uid if Config.OWNER_ID == 0 else Config.OWNER_ID
+ALIVE_NAME = Config.ALIVE_NAME
 
-zedub.version = __version__
-zedub.tgbot.version = __version__
-LOGS = logging.getLogger("نيٕبـثون")
-bot = zedub
+Heroku = heroku3.from_key(Config.HEROKU_API_KEY)
+heroku_api = "https://api.heroku.com"
+HEROKU_APP_NAME = Config.HEROKU_APP_NAME
+HEROKU_API_KEY = Config.HEROKU_API_KEY
 
+thumb_image_path = os.path.join(Config.TMP_DOWNLOAD_DIRECTORY, "thumb_image.jpg")
 
-StartTime = time.time()
-zedversion = "3.1.1"
+# mention user
+mention = f"[{Config.ALIVE_NAME}](tg://user?id={USERID})"
+hmention = f"<a href = tg://user?id={USERID}>{Config.ALIVE_NAME}</a>"
 
+PM_START = []
+PMMESSAGE_CACHE = {}
+PMMENU = "pmpermit_menu" not in Config.NO_LOAD
 
-def close_connection(*_):
-    print("تم إغلاق الاتصال بالسورس")
-    runasync(zedub.disconnect())
-    sys.exit(143)
+# Gdrive
+TMP_DOWNLOAD_DIRECTORY = Config.TMP_DOWNLOAD_DIRECTORY
 
-
-signal.signal(signal.SIGTERM, close_connection)
-
-UPSTREAM_REPO_URL = Config.UPSTREAM_REPO
-
-if Config.PRIVATE_GROUP_BOT_API_ID == 0:
-    if gvarstatus("PRIVATE_GROUP_BOT_API_ID") is None:
-        Config.BOTLOG = False
-        Config.BOTLOG_CHATID = "me"
-    else:
-        Config.BOTLOG_CHATID = int(gvarstatus("PRIVATE_GROUP_BOT_API_ID"))
-        Config.PRIVATE_GROUP_BOT_API_ID = int(gvarstatus("PRIVATE_GROUP_BOT_API_ID"))
-        Config.BOTLOG = True
+# spamwatch support
+if Config.SPAMWATCH_API:
+    token = Config.SPAMWATCH_API
+    spamwatch = spam_watch.Client(token)
 else:
-    if str(Config.PRIVATE_GROUP_BOT_API_ID)[0] != "-":
-        Config.BOTLOG_CHATID = int(f"-{str(Config.PRIVATE_GROUP_BOT_API_ID)}")
+    spamwatch = None
+
+
+# ================================================
+
+if not os.path.isdir(Config.TMP_DOWNLOAD_DIRECTORY):
+    os.makedirs(Config.TMP_DOWNLOAD_DIRECTORY)
+
+
+# thumb image
+if Config.THUMB_IMAGE is not None:
+    check = url(Config.THUMB_IMAGE)
+    if check:
+        try:
+            with open(thumb_image_path, "wb") as f:
+                f.write(requests.get(Config.THUMB_IMAGE).content)
+        except Exception as e:
+            LOGS.info(str(e))
+
+
+def set_key(dictionary, key, value):
+    if key not in dictionary:
+        dictionary[key] = value
+    elif isinstance(dictionary[key], list):
+        if value in dictionary[key]:
+            return
+        dictionary[key].append(value)
     else:
-        Config.BOTLOG_CHATID = Config.PRIVATE_GROUP_BOT_API_ID
-    Config.BOTLOG = True
-
-if Config.PM_LOGGER_GROUP_ID == 0:
-    if gvarstatus("PM_LOGGER_GROUP_ID") is None:
-        Config.PM_LOGGER_GROUP_ID = -100
-    else:
-        Config.PM_LOGGER_GROUP_ID = int(gvarstatus("PM_LOGGER_GROUP_ID"))
-elif str(Config.PM_LOGGER_GROUP_ID)[0] != "-":
-    Config.PM_LOGGER_GROUP_ID = int(f"-{str(Config.PM_LOGGER_GROUP_ID)}")
-
-try:
-    if Config.HEROKU_API_KEY is not None or Config.HEROKU_APP_NAME is not None:
-        HEROKU_APP = heroku3.from_key(Config.HEROKU_API_KEY).apps()[
-            Config.HEROKU_APP_NAME
-        ]
-    else:
-        HEROKU_APP = None
-except Exception:
-    HEROKU_APP = None
+        dictionary[key] = [dictionary[key], value]
 
 
-# Global Configiables
-COUNT_MSG = 0
-USERS = {}
-COUNT_PM = {}
-LASTMSG = {}
-CMD_HELP = {}
-ISAFK = False
-AFKREASON = None
-CMD_LIST = {}
-SUDO_LIST = {}
-# for later purposes
-INT_PLUG = ""
-LOAD_PLUG = {}
-
-# Variables
-BOTLOG = Config.BOTLOG
-BOTLOG_CHATID = Config.BOTLOG_CHATID
-PM_LOGGER_GROUP_ID = Config.PM_LOGGER_GROUP_ID
+async def make_gif(event, reply, quality=None, fps=None):
+    fps = fps or 1
+    quality = quality or 256
+    result_p = os.path.join("temp", "animation.gif")
+    animation = lottie.parsers.tgs.parse_tgs(reply)
+    with open(result_p, "wb") as result:
+        await _sarutils.run_sync(
+            lottie.exporters.gif.export_gif, animation, result, quality, fps
+        )
+    return result_p
